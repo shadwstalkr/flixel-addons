@@ -38,25 +38,27 @@ class TiledMap
 	// Use array to preserve load order
 	public var layers:Array<TiledLayer>;
 	public var objectGroups:Array<TiledObjectGroup>;
-	
+
+    // path to the source file, split into components. Might be null
+    public var sourcePath : Array<String>;
+
 	public function new(Data:Dynamic)
 	{
 		properties = new TiledPropertySet();
 		var source:Fast = null;
 		var node:Fast = null;
 		
-		#if (LOAD_CONFIG_REAL_TIME && !neko)
-		// Load the asset located in the assets foldier, not the copies within bin folder
 		if (Std.is(Data, String)) 
 		{
+            sourcePath = ((Data != null) ? Data.split("/") : null);
+
+            #if (LOAD_CONFIG_REAL_TIME && !neko)
+            // Load the asset located in the assets foldier, not the copies within bin folder
 			source = new Fast(Xml.parse(File.getContent("../../../../" + Data)));
-		}
-		#else
-		if (Std.is(Data, String)) 
-		{
+      		#else
 			source = new Fast(Xml.parse(Assets.getText(Data)));
+    		#end
 		}
-		#end
 		else if (Std.is(Data, Xml)) 
 		{
 			source = new Fast(Data);
@@ -120,12 +122,27 @@ class TiledMap
 		var name:String;
 		for (node in source.nodes.tileset)
 		{
-			name = node.att.name;
+            if(node.has.source)
+            {
+                // load external tileset
+                var path = relativePath(node.att.source);
+                var tileset = new TiledTileSet(openfl.Assets.getBytes(path));
+                tileset.firstGID = (node.has.firstgid) ? Std.parseInt(node.att.firstgid) : 1;
+
+                if (!noLoadHash.exists(tileset.name))
+                {
+                    tilesets.set(tileset.name, tileset);
+                }
+            }
+            else
+            {
+                name = node.att.name;
 			
-			if (!noLoadHash.exists(name))
-			{
-				tilesets.set(name, new TiledTileSet(node));
-			}
+                if (!noLoadHash.exists(name))
+                {
+                    tilesets.set(name, new TiledTileSet(node));
+                }
+            }
 		}
 		
 		// load layer
@@ -202,4 +219,30 @@ class TiledMap
 		
 		return null;
 	}
+
+    // resolve a path relative to the source path
+    public function relativePath(path : String) : String
+    {
+        if(sourcePath != null)
+        {
+            var parts = path.split("/");
+
+            // components to trim off the end of sourcePath
+            var trim = 1;
+
+            while(parts.length > 0 && parts[0] == "..")
+            {
+                trim++;
+                parts.shift();
+            }
+
+            var out = sourcePath.slice(0, -trim);
+            out = out.concat(parts);
+            return out.join("/");
+        }
+        else
+        {
+            return null;
+        }
+    }
 }
